@@ -27,3 +27,24 @@ def get_task(id: int):
         if task["id"] == id:
             return task
     return JSONResponse(status_code=404, content={"error": f"Task {id} not found"})
+
+@app.post("/tasks")
+async def create_task(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "invalid JSON body"})
+
+    title = body.get("title")
+  
+    title = body.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return JSONResponse(
+            status_code=400,
+            content={"error": "title is required and must be a non-empty string"},
+        )
+
+    new_id = max([t["id"] for t in tasks], default=0) + 1
+    task = {"id": new_id, "title": title, "done": False}
+    tasks.append(task)
+    return JSONResponse(status_code=201, content=task)
