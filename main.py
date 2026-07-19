@@ -1,6 +1,10 @@
 from fastapi import FastAPI,Request,Response
 from fastapi.responses import JSONResponse
-app = FastAPI()
+app = FastAPI(
+    title="Task API",
+    description="A simple CRUD API for managing a to-do list.",
+    version="1.0",
+)
 
 tasks = [
     {"id": 1, "title": "Learn HTTP", "done": True},
@@ -15,14 +19,18 @@ def read_root():
 
 @app.get("/health")
 def health_check():
+    "gets status"
     return {"status": "ok"}
 
-@app.get("/tasks")
+@app.get("/tasks",summary="List all tasks")
 def get_tasks():
+    "Returns every task in the list."
+
     return tasks
 
 @app.get("/tasks/{id}")
 def get_task(id: int):
+    "returns a single task by id"
     for task in tasks:
         if task["id"] == id:
             return task
@@ -30,6 +38,7 @@ def get_task(id: int):
 
 @app.post("/tasks")
 async def create_task(request: Request):
+    "creates a task"
     try:
         body = await request.json()
     except Exception:
@@ -49,6 +58,7 @@ async def create_task(request: Request):
 
 @app.put("/tasks/{id}")
 async def update_task(id: int, request: Request):
+    "updates a task"
     try:
         body = await request.json()
     except Exception:
@@ -71,6 +81,7 @@ async def update_task(id: int, request: Request):
 
 @app.delete("/tasks/{id}")
 def delete_task(id: int):
+    "deletes a task by id"
     for i, task in enumerate(tasks):
         if task["id"] == id:
             tasks.pop(i)
