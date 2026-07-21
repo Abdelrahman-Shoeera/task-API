@@ -23,10 +23,17 @@ def health_check():
     return {"status": "ok"}
 
 @app.get("/tasks",summary="List all tasks")
-def get_tasks():
-    "Returns every task in the list."
+def get_tasks(done: bool | None = None, search: str | None = None):
+    """Return all tasks, optionally filtered by done status and/or title search."""
+    result = tasks
 
-    return tasks
+    if done is not None:
+        result = [t for t in result if t["done"] == done]
+
+    if search is not None:
+        result = [t for t in result if search.lower() in t["title"].lower()]
+
+    return result
 
 @app.get("/tasks/{id}")
 def get_task(id: int):
@@ -88,3 +95,10 @@ def delete_task(id: int):
             return Response(status_code=204)
 
     return JSONResponse(status_code=404, content={"error": f"Task {id} not found"})
+
+@app.get("/stats", summary="Task statistics")
+def get_stats():
+    """Return counts of total, done, and open tasks."""
+    total = len(tasks)
+    done = len([t for t in tasks if t["done"]])
+    return {"total": total, "done": done, "open": total - done}
