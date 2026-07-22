@@ -98,30 +98,51 @@ async def update_task(id: int, request: Request):
     except Exception:
         return JSONResponse(status_code=400, content={"error": "invalid JSON body"})
 
-    for task in tasks:
-        if task["id"] == id:
-            if "title" in body:
-                title = body["title"]
-                if not isinstance(title, str) or not title.strip():
-                    return JSONResponse(status_code=400, content={"error": "title must be a non-empty string"})
-                task["title"] = title
-            if "done" in body:
-                if not isinstance(body["done"], bool):
-                    return JSONResponse(status_code=400, content={"error": "done must be true or false"})
-                task["done"] = body["done"]
-            return task
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (id,)).fetchone()
+    if row is None:
+        conn.close()
+        return JSONResponse(status_code=404, content={"error": f"Task {id} not found"})
 
-    return JSONResponse(status_code=404, content={"error": f"Task {id} not found"})
+    updates = []
+    params = []
+
+    if "title" in body:
+        title = body["title"]
+        if not isinstance(title, str) or not title.strip():
+            conn.close()
+            return JSONResponse(status_code=400, content={"error": "title must be a non-empty string"})
+        updates.append("title = ?")
+        params.append(title)
+
+    if "done" in body:
+        if not isinstance(body["done"], bool):
+            conn.close()
+            return JSONResponse(status_code=400, content={"error": "done must be true or false"})
+        updates.append("done = ?")
+        params.append(1 if body["done"] else 0)
+
+    if updates:
+        params.append(id)
+        conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (id,)).fetchone()
+    conn.close()
+    return row_to_task(row) 
 
 @app.delete("/tasks/{id}")
 def delete_task(id: int):
     "deletes a task by id"
-    for i, task in enumerate(tasks):
-        if task["id"] == id:
-            tasks.pop(i)
-            return Response(status_code=204)
+    conn = get_connection()
+    cur = conn.execute("DELETE FROM tasks WHERE id = ?", (id,))
+    conn.commit()
+    conn.close()
 
-    return JSONResponse(status_code=404, content={"error": f"Task {id} not found"})
+    if cur.rowcount == 0:
+        return JSONResponse(status_code=404, content={"error": f"Task {id} not found"})
+
+    return Response(status_code=204)
 
 @app.get("/stats", summary="Task statistics")
 def get_stats():
