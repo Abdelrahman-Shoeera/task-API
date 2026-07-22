@@ -77,6 +77,38 @@ content-type: application/json
   not for POST/PUT. Those two endpoints are fully tested with `curl` — see
   the example above — and work correctly for the whole create/update cycle.
 
-- **Storage is in-memory.** Created tasks live in a Python list and disappear
-  when the server stops. Restarting the server brings back only the three
-  seed tasks. This is exactly why a database is needed.
+- **Storage moved from memory to SQLite (Week 3).** In Week 2, tasks lived in a
+  Python list and vanished whenever the server stopped; restarting brought back
+  only the three seed tasks. That limitation is what Week 3 fixed. The
+  endpoints, status codes, and request/response shapes are all unchanged — only
+  the code behind them changed, from list operations to SQL queries. The
+  endpoint table above needed no edits, which is the clearest evidence that
+  storage is an implementation detail the client never sees.
+
+## Database
+
+Tasks are stored in a SQLite database file, `tasks.db`, in the project root.
+
+**Why SQLite:** no server, no installation, no configuration — the whole
+database is a single file, created automatically on first run. Python's
+`sqlite3` module is built in, so there is nothing to install. Unlike the
+in-memory list it replaced, the data survives restarts.
+
+**Setup is automatic.** On startup the app creates `tasks.db` and the `tasks`
+table if missing, and seeds three example tasks only when the table is empty,
+so restarting never duplicates them. `tasks.db` is git-ignored, so a fresh
+clone builds its own database — no manual setup.
+
+All queries use parameterized placeholders (`?`), so user input is never
+interpreted as SQL.
+
+### Example query
+
+Run by hand in DB Browser for SQLite:
+
+    SELECT COUNT(*) FROM tasks;
+
+Returned 3 — the number of rows in the table after a fresh start.
+
+![DB Browser showing the tasks table](database.png)
+
