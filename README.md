@@ -1,10 +1,6 @@
 # Task API
 
-A small CRUD API for managing a to-do list, built with FastAPI as part of the
-FlyRank Backend Track (Week 2). It supports creating, reading, updating, and
-deleting tasks. Data is kept in memory — there is no database yet, so the task
-list resets to its three starting tasks every time the server restarts.
-
+A small CRUD API for managing a to-do list, built with FastAPI as part of the FlyRank Backend Track (Weeks 2–3). It supports creating, reading, updating, and deleting tasks. Data is stored in a SQLite database (tasks.db), so tasks survive a server restart.
 ## Requirements
 
 - Python 3.10 or newer
@@ -83,5 +79,4 @@ content-type: application/json
 
 - **Storage is in-memory.** Created tasks live in a Python list and disappear
   when the server stops. Restarting the server brings back only the three
-  seed tasks. This is exactly why a database is needed, which is the topic of
-  Week 3.
+  seed tasks. This is exactly why a database is needed.
