@@ -1,5 +1,9 @@
 from fastapi import FastAPI,Request,Response
 from fastapi.responses import JSONResponse
+from db import init_db
+
+init_db()
+
 app = FastAPI(
     title="Task API",
     description="A simple CRUD API for managing a to-do list.",
