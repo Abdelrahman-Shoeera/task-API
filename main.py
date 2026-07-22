@@ -1,6 +1,7 @@
 from fastapi import FastAPI,Request,Response
 from fastapi.responses import JSONResponse
-from db import init_db
+from db import init_db, get_connection, row_to_task
+
 
 init_db()
 
@@ -26,26 +27,43 @@ def health_check():
     "gets status"
     return {"status": "ok"}
 
-@app.get("/tasks",summary="List all tasks")
+@app.get("/tasks", summary="List all tasks")
 def get_tasks(done: bool | None = None, search: str | None = None):
     """Return all tasks, optionally filtered by done status and/or title search."""
-    result = tasks
+    sql = "SELECT * FROM tasks"
+    conditions = []
+    params = []
 
     if done is not None:
-        result = [t for t in result if t["done"] == done]
+        conditions.append("done = ?")
+        params.append(1 if done else 0)
 
     if search is not None:
-        result = [t for t in result if search.lower() in t["title"].lower()]
+        conditions.append("title LIKE ?")
+        params.append(f"%{search}%")
 
-    return result
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+
+    conn = get_connection()
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+
+    return [row_to_task(r) for r in rows]
+
 
 @app.get("/tasks/{id}")
 def get_task(id: int):
     "returns a single task by id"
-    for task in tasks:
-        if task["id"] == id:
-            return task
-    return JSONResponse(status_code=404, content={"error": f"Task {id} not found"})
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (id,)).fetchone()
+    conn.close()
+
+    if row is None:
+        return JSONResponse(status_code=404, content={"error": f"Task {id} not found"})
+
+    return row_to_task(row)
+
 
 @app.post("/tasks")
 async def create_task(request: Request):

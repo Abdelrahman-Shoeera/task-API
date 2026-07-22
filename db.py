@@ -25,3 +25,10 @@ def init_db():
         )
     conn.commit()
     conn.close()
+
+def row_to_task(row):
+     return {
+        "id": row["id"],
+        "title": row["title"],
+        "done": bool(row["done"]),
+     }
