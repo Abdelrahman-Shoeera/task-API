@@ -80,9 +80,14 @@ async def create_task(request: Request):
             content={"error": "title is required and must be a non-empty string"},
         )
 
-    new_id = max([t["id"] for t in tasks], default=0) + 1
-    task = {"id": new_id, "title": title, "done": False}
-    tasks.append(task)
+    conn = get_connection()
+    cur = conn.execute(
+        "INSERT INTO tasks (title, done) VALUES (?, ?)",
+        (title, 0)
+    )
+    conn.commit()
+    task = {"id": cur.lastrowid, "title": title, "done": False}
+    conn.close()
     return JSONResponse(status_code=201, content=task)
 
 @app.put("/tasks/{id}")
