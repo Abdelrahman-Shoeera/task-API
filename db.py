@@ -1,34 +1,32 @@
-import sqlite3
+import os
+import psycopg
+from psycopg.rows import dict_row
+from dotenv import load_dotenv
 
-DB_FILE = "tasks.db"
+load_dotenv()
+
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 def get_connection():
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row   # rows come back like dicts
-    return conn
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 def init_db():
     conn = get_connection()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id    INTEGER PRIMARY KEY,
-            title TEXT NOT NULL,
-            done  INTEGER NOT NULL DEFAULT 0
-        )
-    """)
-    # seed only if the table is empty
-    count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
-    if count == 0:
-        conn.executemany(
-            "INSERT INTO tasks (title, done) VALUES (?, ?)",
-            [("Buy milk", 0), ("Walk the dog", 1), ("Read a book", 0)],
-        )
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id    SERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                done  BOOLEAN NOT NULL DEFAULT FALSE
+            )
+        """)
+        cur.execute("SELECT COUNT(*) FROM tasks")
+        count = cur.fetchone()["count"]
+        if count == 0:
+            cur.executemany(
+                "INSERT INTO tasks (title, done) VALUES (%s, %s)",
+                [("Buy milk", False), ("Walk the dog", True), ("Read a book", False)],
+            )
     conn.commit()
     conn.close()
-
-def row_to_task(row):
-     return {
-        "id": row["id"],
-        "title": row["title"],
-        "done": bool(row["done"]),
-     }
+    
