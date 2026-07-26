@@ -35,28 +35,30 @@ def get_tasks(done: bool | None = None, search: str | None = None):
     params = []
 
     if done is not None:
-        conditions.append("done = ?")
-        params.append(1 if done else 0)
+        conditions.append("done = %s")
+        params.append(done)
 
     if search is not None:
-        conditions.append("title LIKE ?")
+        conditions.append("title LIKE %s")
         params.append(f"%{search}%")
 
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)
 
     conn = get_connection()
-    rows = conn.execute(sql, params).fetchall()
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        rows = cur.fetchall()
     conn.close()
-
     return [row_to_task(r) for r in rows]
-
 
 @app.get("/tasks/{id}")
 def get_task(id: int):
     "returns a single task by id"
     conn = get_connection()
-    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (id,)).fetchone()
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM tasks WHERE id = %s", (id,))
+        row = cur.fetchone()
     conn.close()
 
     if row is None:
