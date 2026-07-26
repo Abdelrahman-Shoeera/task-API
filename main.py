@@ -82,15 +82,16 @@ async def create_task(request: Request):
             content={"error": "title is required and must be a non-empty string"},
         )
 
-    conn = get_connection()
-    cur = conn.execute(
-        "INSERT INTO tasks (title, done) VALUES (?, ?)",
-        (title, 0)
-    )
+    conn =get_connection()
+    with conn.cursor() as cur:
+       cur.execute(
+           "INSERT INTO tasks (title, done) VALUES (%s, %s) RETURNING *",
+           (title, False),
+       )
+       row = cur.fetchone()
     conn.commit()
-    task = {"id": cur.lastrowid, "title": title, "done": False}
     conn.close()
-    return JSONResponse(status_code=201, content=task)
+    return JSONResponse(status_code=201, content=row_to_task(row))
 
 @app.put("/tasks/{id}")
 async def update_task(id: int, request: Request):
@@ -101,7 +102,9 @@ async def update_task(id: int, request: Request):
         return JSONResponse(status_code=400, content={"error": "invalid JSON body"})
 
     conn = get_connection()
-    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (id,)).fetchone()
+    with conn.cursor() as cur:
+      cur.execute("SELECT * FROM tasks WHERE id =%s", (id,))
+      row=cur.fetchone()
     if row is None:
         conn.close()
         return JSONResponse(status_code=404, content={"error": f"Task {id} not found"})
@@ -114,22 +117,23 @@ async def update_task(id: int, request: Request):
         if not isinstance(title, str) or not title.strip():
             conn.close()
             return JSONResponse(status_code=400, content={"error": "title must be a non-empty string"})
-        updates.append("title = ?")
+        updates.append("title = %s")
         params.append(title)
 
     if "done" in body:
         if not isinstance(body["done"], bool):
             conn.close()
             return JSONResponse(status_code=400, content={"error": "done must be true or false"})
-        updates.append("done = ?")
-        params.append(1 if body["done"] else 0)
+        updates.append("done = %s")
+        params.append(body["done"])
 
     if updates:
         params.append(id)
-        conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", params)
-        conn.commit()
-
-    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (id,)).fetchone()
+        with conn.cursor() as cur:
+           cur.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = %s", params)
+           conn.commit()
+           cur.execute("SELECT * FROM tasks WHERE id = %s", (id,))
+           row=cur.fetchone()
     conn.close()
     return row_to_task(row) 
 
@@ -137,11 +141,13 @@ async def update_task(id: int, request: Request):
 def delete_task(id: int):
     "deletes a task by id"
     conn = get_connection()
-    cur = conn.execute("DELETE FROM tasks WHERE id = ?", (id,))
+    with conn.cursor() as cur:
+       cur.execute("DELETE FROM tasks WHERE id = %s", (id,))
+       deleted = cur.rowcount  
     conn.commit()
     conn.close()
 
-    if cur.rowcount == 0:
+    if deleted == 0:
         return JSONResponse(status_code=404, content={"error": f"Task {id} not found"})
 
     return Response(status_code=204)
