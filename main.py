@@ -1,9 +1,21 @@
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI,Request,Response
+from supabase import create_client, Client
 from fastapi.responses import JSONResponse
 from db import init_db, get_connection, row_to_task
 
-
+load_dotenv()
 init_db()
+
+
+
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_KEY")
+
+supabase: Client = create_client(supabase_url, supabase_key)
+
+print("Server running and connected to Supabase")
 
 app = FastAPI(
     title="Task API",
@@ -11,11 +23,6 @@ app = FastAPI(
     version="1.0",
 )
 
-tasks = [
-    {"id": 1, "title": "Learn HTTP", "done": True},
-    {"id": 2, "title": "Build a CRUD API", "done": False},
-    {"id": 3, "title": "Publish to GitHub", "done": False},
-]
 
 @app.get("/")
 def read_root():
