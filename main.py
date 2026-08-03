@@ -4,6 +4,7 @@ from fastapi import FastAPI,Request,Response
 from supabase import create_client, Client
 from fastapi.responses import JSONResponse
 from db import init_db, get_connection, row_to_task
+from supabase_auth.errors import AuthApiError
 
 load_dotenv()
 init_db()
@@ -173,3 +174,71 @@ def get_stats():
 
     open_count = total - done
     return {"total": total, "done": done, "open": open_count}
+
+@app.post("/auth/signup")
+async def signup(request: Request):
+    
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON body"})
+
+    email = body.get("email")  
+    password=body.get("password")  
+
+    if not isinstance(email, str) or not email.strip():
+            return JSONResponse(
+                status_code=400,
+                content={"error": "email is required and must be a non-empty string"},
+            )
+    if not isinstance(password, str) or not password.strip():
+            return JSONResponse(
+                status_code=400,
+                content={"error": "password is required and must be a non-empty string"},
+            )
+    try:
+        response = supabase.auth.sign_up({"email": email, "password": password})
+    except AuthApiError as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+    user = response.user
+    return JSONResponse(
+        status_code=201,
+        content={
+            "id": user.id,
+            "email": user.email,
+            "created_at": str(user.created_at),
+        },
+    )
+
+@app.post("/auth/login")
+async def login(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON body"})
+    
+    email = body.get("email")  
+    password=body.get("password")  
+    
+    if not isinstance(email, str) or not email.strip():
+        return JSONResponse(
+                    status_code=400,
+                    content={"error": "email is required and must be a non-empty string"},
+                )
+    if not isinstance(password, str) or not password.strip():
+        return JSONResponse(
+                    status_code=400,
+                    content={"error": "password is required and must be a non-empty string"},
+                )
+    try:
+        response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+    except AuthApiError as e:
+        return JSONResponse(status_code=401, content={"error":  "Invalid login credentials"})
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "access_token": response.session.access_token,
+            "refresh_token": response.session.refresh_token,
+        },
+    )
