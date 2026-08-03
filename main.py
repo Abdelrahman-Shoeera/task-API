@@ -242,3 +242,22 @@ async def login(request: Request):
             "refresh_token": response.session.refresh_token,
         },
     )
+
+@app.get("/public/info")
+async def public_info():
+   return JSONResponse(status_code=200,content={"message": "Welcome stranger! This info is public."}, )
+
+@app.get("/protected/profile")
+async def protected_profile(request: Request):
+    auth_header = request.headers.get("authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return JSONResponse(
+                            status_code=401,
+                            content={"error": "Access token required"}
+                        )
+    token = auth_header.removeprefix("Bearer ").strip()
+    if not token:
+        return JSONResponse(status_code=401,content={"error": "Access token required"})
+
+    return JSONResponse( status_code=200,content={"message": "Token received", "token": token})
+
