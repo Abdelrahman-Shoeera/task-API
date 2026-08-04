@@ -259,5 +259,11 @@ async def protected_profile(request: Request):
     if not token:
         return JSONResponse(status_code=401,content={"error": "Access token required"})
 
-    return JSONResponse( status_code=200,content={"message": "Token received", "token": token})
 
+    try:
+        user_response = supabase.auth.get_user(token)
+    except AuthApiError as e:
+        return JSONResponse(status_code=401,content={"error":  "Invalid or expired token"})
+
+    user = user_response.user
+    return JSONResponse(status_code=200,content={"email": user.email,"id":user.id,"created_at":str(user.created_at)}, )
