@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI,Request,Response,Depends,HTTPException,Response
+from fastapi import FastAPI,Request,Response,Depends,HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import create_client, Client
 from fastapi.responses import JSONResponse
 from db import init_db, get_connection, row_to_task
@@ -175,9 +176,9 @@ def get_stats():
     open_count = total - done
     return {"total": total, "done": done, "open": open_count}
 
+security = HTTPBearer(auto_error=False)
 
-
-def get_current_user(request: Request):
+def get_current_user(request: Request,credentials: HTTPAuthorizationCredentials = Depends(security),):
     auth_header = request.headers.get("authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Access token required")
