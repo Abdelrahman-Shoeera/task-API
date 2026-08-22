@@ -120,6 +120,7 @@ Returned `3` — the number of rows in the table after a fresh start.
 
 ![The tasks table in PostgreSQL, viewed in DBeaver](screenshots/database.png)
 
+
 ## Authentication
 
 User accounts are handled by Supabase, which acts as the identity provider. The API never stores or hashes passwords itself — Supabase stores the accounts, hashes the passwords, and issues signed tokens. This is deliberate: rolling your own password hashing and token signing is dangerous and error-prone, so we rely on a trusted provider to handle authentication securely.
@@ -129,3 +130,35 @@ Signing up (`POST /auth/signup`) creates an account. Logging in (`POST /auth/log
 Protected routes are guarded by a single reusable dependency, `get_current_user`. It reads the `Authorization` header, extracts the token, and verifies it with Supabase. Because every protected route depends on this one function, the auth logic lives in one place instead of being copy-pasted — adding a new protected route is one line, and a fix to the guard updates every route at once.
 
 A request with no token, or a malformed header, is rejected with 401 and the message `"Access token required"`. A request with an invalid or expired token is rejected with 401 and the message `"Invalid or expired token"`.
+
+## LLM Categorization (A5 Stage 1+)
+
+### POST /categorize
+Categorizes a task title using an LLM. Returns category, priority, estimated
+minutes, confidence, and a short reason.
+
+**Auth:** Bearer token required (Supabase JWT).
+
+**Development mode:** set `LLM_STUB=1` when starting uvicorn to skip real
+LLM calls and return a hardcoded stub response. Useful for iteration without
+burning API quota.
+
+**Valid request:**
+```bash
+curl -i -X POST http://localhost:8000/categorize \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"title":"buy milk"}'
+```
+
+Returns `200 OK` with a JSON body matching the CategorizeResponse schema.
+
+**Invalid request (empty title):**
+```bash
+curl -i -X POST http://localhost:8000/categorize \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"title":""}'
+```
+
+Returns `422 Unprocessable Content` with a JSON error naming the `title` field.

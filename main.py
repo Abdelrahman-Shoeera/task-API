@@ -6,6 +6,7 @@ from supabase import create_client, Client
 from fastapi.responses import JSONResponse
 from db import init_db, get_connection, row_to_task
 from supabase_auth.errors import AuthApiError
+from llm import CategorizeRequest, CategorizeResponse, categorize
 
 load_dotenv()
 init_db()
@@ -276,3 +277,15 @@ def logout(user = Depends(get_current_user)):
 @app.get("/protected/dashboard")
 def dashboard(user = Depends(get_current_user)):
     return JSONResponse(status_code=200,content={"message":"welcome"})
+
+@app.post("/categorize", response_model=CategorizeResponse)
+def categorize_task(
+    body: CategorizeRequest,
+    user = Depends(get_current_user),
+):
+    """Categorize a task title using an LLM.
+
+    Returns a validated CategorizeResponse. Auth required.
+    In Stage 1, only stub mode works (set LLM_STUB=1).
+    """
+    return categorize(body.title)
