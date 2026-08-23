@@ -162,3 +162,25 @@ curl -i -X POST http://localhost:8000/categorize \
 ```
 
 Returns `422 Unprocessable Content` with a JSON error naming the `title` field.
+
+
+## Notes
+
+### Stage 2 notes
+
+Three tuning observations from initial testing:
+
+1. Clear tasks ("buy milk") get high confidence (0.9+) and short, specific
+   reasons — the model appears to gain confidence when the mapping to
+   category is unambiguous.
+
+2. Ambiguous tasks ("finish A5 assignment") produce defensible but
+   inconsistent classifications across runs. "Work" vs "personal" vs
+   "admin" all fit; the model picks one and inflates confidence around
+   0.85. This will affect eval design — I'll grade ambiguous cases on
+   shape, not exact category match.
+
+3. Garbage input ("asdfghjkl") reliably escapes to `other` with confidence
+   around 0.1, honoring the "when unsure" section of the prompt. This is
+   the highest-signal behavior — a classifier that admits ignorance is
+   more useful in production than one that guesses.

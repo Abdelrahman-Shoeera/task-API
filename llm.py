@@ -7,6 +7,17 @@ Stage 2+ will add: prompt loading, real LLM client, parse/validate/repair.
 import os
 from enum import Enum
 from pydantic import BaseModel, Field
+from pathlib import Path
+from openai import OpenAI
+
+PROMPT_VERSION = "v1"
+PROMPT_PATH = Path(__file__).parent / "prompts" / f"categorize-{PROMPT_VERSION}.md"
+SYSTEM_PROMPT = PROMPT_PATH.read_text()
+
+client = OpenAI(
+    base_url=os.environ.get("LLM_BASE_URL"),
+    api_key=os.environ.get("LLM_API_KEY"),
+)
 
 
 # --- Enums for closed-list fields (see JOB-CARD.md) ---
@@ -61,12 +72,25 @@ def _stub_response(title: str) -> CategorizeResponse:
 def categorize(title: str) -> CategorizeResponse:
     """Categorize a task title. Returns a validated response.
 
-    Stage 1: only stub mode works. Real LLM call comes in Stage 2.
+    Uses stub mode (LLM_STUB=1) or real LLM call.
     """
     if os.environ.get("LLM_STUB") == "1":
         return _stub_response(title)
 
-    # Stage 2 will replace this with a real LLM call
-    raise NotImplementedError(
-        "Real LLM call not yet implemented. Set LLM_STUB=1 to use stub mode."
+    response = client.chat.completions.create(
+        model=os.environ["LLM_MODEL"],
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": title},
+        ],
+        temperature=0.2,
     )
+
+    raw = response.choices[0].message.content
+    print(f"[LLM raw] {raw}")
+
+    # Temporary debug: print raw model output for Stage 2/3 iteration.
+    # Will be replaced by structured logging later.
+    import json
+    parsed = json.loads(raw)
+    return CategorizeResponse(**parsed)
