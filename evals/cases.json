@@ -1,0 +1,50 @@
+[
+  {
+    "id": "easy_errand",
+    "title": "buy milk",
+    "expected_category": "errand",
+    "notes": "baseline obvious errand"
+  },
+  {
+    "id": "easy_work_matches_example",
+    "title": "submit quarterly report",
+    "expected_category": "work",
+    "notes": "matches an example in the prompt file; smoke test"
+  },
+  {
+    "id": "easy_personal",
+    "title": "call mom to say happy birthday",
+    "expected_category": "personal",
+    "notes": "unambiguous personal relationship task"
+  },
+  {
+    "id": "easy_admin",
+    "title": "renew passport",
+    "expected_category": "admin",
+    "notes": "bureaucratic paperwork"
+  },
+  {
+    "id": "escape_gibberish",
+    "title": "asdfghjkl",
+    "expected_category": "other",
+    "notes": "must trigger the 'when unsure' rule; also expect confidence < 0.5"
+  },
+  {
+    "id": "ambiguous_assignment",
+    "title": "finish A5 assignment",
+    "expected_category": ["work", "personal", "admin"],
+    "notes": "genuinely borderline; any of the three is defensible"
+  },
+  {
+    "id": "ambiguous_gym",
+    "title": "go to the gym",
+    "expected_category": ["personal", "errand"],
+    "notes": "borderline; both make sense"
+  },
+  {
+    "id": "priority_signal",
+    "title": "remind me to email Sara about the invoice - urgent",
+    "expected_category": "work",
+    "notes": "clearly work; also probes whether model picks up 'urgent' as priority=high (not graded)"
+  }
+]
