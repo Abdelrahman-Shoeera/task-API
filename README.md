@@ -184,3 +184,49 @@ Three tuning observations from initial testing:
    around 0.1, honoring the "when unsure" section of the prompt. This is
    the highest-signal behavior — a classifier that admits ignorance is
    more useful in production than one that guesses.
+
+
+### Retry policy
+
+The endpoint uses the `openai` SDK's built-in retry behavior with an
+explicit `max_retries=2` on the client. This means each `/categorize`
+call may result in up to 3 HTTP round-trips to OpenRouter (initial + 2
+retries) if the upstream returns a retriable error.
+
+Retries fire on: 408, 409, 429, and 5xx responses. They do NOT fire on
+400, 401, or 403 — client-side errors don't magically become valid on
+retry, and retrying on 401 would waste quota against a bad key.
+
+I chose the SDK defaults (Option B in the A17 assignment) rather than
+writing custom retry logic, on the reasoning that the SDK's
+implementation is well-tested, respects `Retry-After` headers correctly,
+and adds jitter automatically. The tradeoff is that individual retry
+attempts are not visible to my cost log — one logged "call" may
+represent up to 3 upstream requests.
+
+### Cost logging
+
+Every call to `/categorize` writes one structured JSON line to
+`logs/calls.jsonl`. Fields: timestamp, prompt_version, model,
+input_tokens, output_tokens, duration_ms, repaired, outcome.
+
+`outcome` is one of: `success` (validated on first attempt or after
+repair), `quarantined` (failed twice, logged to quarantine.jsonl),
+`timeout` (LLM provider unresponsive), `kill_switch` (LLM_ENABLED=false),
+`stub` (LLM_STUB=1).
+
+For successful calls that required a repair retry, `input_tokens` and
+`output_tokens` reflect the sum across both attempts, since both count
+against quota. `repaired: true` marks these.
+
+### Cost estimate at scale
+
+Baseline from actual logged calls: ~510 tokens per successful call
+(467 input + 43 output). At 10,000 calls/day:
+- OpenRouter free tier: $0/day
+- Equivalent paid tier (~GPT-4o-mini pricing): ~$1/day, ~$30/month
+- With 10% repair rate: ~$1.15/day, ~$35/month
+
+The single biggest cost driver is input tokens — the system prompt
+(~450 tokens) is resent with every request. Optimizing the prompt for
+brevity, or caching identical requests, would meaningfully reduce cost.

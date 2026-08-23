@@ -4,11 +4,12 @@ import os
 from enum import Enum
 from pydantic import BaseModel, Field,ValidationError
 from pathlib import Path
-from openai import OpenAI
+from openai import OpenAI,APITimeoutError,APIConnectionError
 from dotenv import load_dotenv
 from fastapi import HTTPException
 import json
-
+from datetime import datetime, timezone
+import time
 
 load_dotenv()
 
@@ -19,6 +20,8 @@ SYSTEM_PROMPT = PROMPT_PATH.read_text()
 client = OpenAI(
     base_url=os.environ.get("LLM_BASE_URL"),
     api_key=os.environ.get("LLM_API_KEY"),
+    timeout=30,
+    max_retries=2,
 )
 
 
@@ -90,84 +93,46 @@ def _extract_json(text: str) -> str:
 
     return text[start:end + 1]
 
-def _call_model(messages: list[dict]) -> str:
-    """Call the LLM with a messages list, return the raw response text.
+def _call_model(messages: list[dict]) -> tuple[str, dict]:
+    """Call the LLM. Returns (raw_text, metadata).
 
-    Encapsulates the actual API call so the same code path is used for
-    the main attempt and the repair retry.
+    metadata contains: model, input_tokens, output_tokens, duration_ms.
     """
-    response = client.chat.completions.create(
-        model=os.environ["LLM_MODEL"],
-        messages=messages,
-        temperature=0.2,
-    )
-    raw = response.choices[0].message.content
-    # Temporary debug: print raw model output for Stage 2/3 iteration.
-    # Will be replaced by structured logging in Stage 4.
-    print(f"[LLM raw] {raw}")
-    return raw
-
-def categorize(title: str) -> CategorizeResponse:
-    """Categorize a task title. Returns a validated response.
-
-    Flow:
-      1. Build system+user messages.
-      2. Call the model.
-      3. Try to extract JSON, parse, and validate.
-      4. If step 3 fails, run one repair retry:
-         send the model its own broken output + the error.
-      5. If repair also fails, quarantine and raise HTTPException(422).
-    """
-    if os.environ.get("LLM_STUB") == "1":
-        return _stub_response(title)
-
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": title},
-    ]
-
-    raw = _call_model(messages)
-
-    # First attempt: try to extract, parse, validate
-    first_error = None
+    start = time.perf_counter()
     try:
-       json_text = _extract_json(raw)
-       parsed = json.loads(json_text)
-       return CategorizeResponse(**parsed)
-    except (LLMExtractionError, json.JSONDecodeError, ValidationError) as e:
-       first_error = e
-
-    # Repair retry: send the model its own broken output + the error
-    repair_messages = messages + [
-        {"role": "assistant", "content": raw},
-        {
-            "role": "user",
-            "content": (
-                f"Your previous response was rejected for this reason:\n"
-                f"{first_error}\n\n"
-                f"Return ONLY corrected JSON matching the schema. "
-                f"No explanation, no code fences."
-            ),
-        },
-    ]
-
-    repair_raw = _call_model(repair_messages)
-
-    # Second attempt: try to extract, parse, validate the repair output
-    try:
-        repair_json = _extract_json(repair_raw)
-        repair_parsed = json.loads(repair_json)
-        return CategorizeResponse(**repair_parsed)
-    except (LLMExtractionError, json.JSONDecodeError, ValidationError) as second_error:
-        # Both attempts failed. Quarantine and raise.
-        _log_quarantine(title, raw, str(first_error), repair_raw, str(second_error))
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "Model output failed validation twice. "
-                "Original error: " + str(first_error)[:200]
-            ),
+        response = client.chat.completions.create(
+            model=os.environ["LLM_MODEL"],
+            messages=messages,
+            temperature=0.2,
         )
+    except (APITimeoutError, APIConnectionError):
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        _log_call(
+            prompt_version=PROMPT_VERSION,
+            model=os.environ["LLM_MODEL"],
+            input_tokens=0,
+            output_tokens=0,
+            duration_ms=duration_ms,
+            repaired=False,
+            outcome="timeout",
+        )
+        raise HTTPException(
+            status_code=504,
+            detail="LLM provider could not be reached (timeout or connection error)",
+        )
+
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    raw = response.choices[0].message.content
+    metadata = {
+        "model": response.model,
+        "input_tokens": response.usage.prompt_tokens,
+        "output_tokens": response.usage.completion_tokens,
+        "duration_ms": duration_ms,
+    }
+    print(f"[LLM raw] {raw}")
+    return raw, metadata
+
+
 
 def _log_quarantine(title: str,raw: str,first_error: str,repair_raw: str,second_error: str) -> None:
     """Append a failure record to logs/quarantine.jsonl.
@@ -182,7 +147,7 @@ def _log_quarantine(title: str,raw: str,first_error: str,repair_raw: str,second_
     log_path = Path(__file__).parent / "logs" / "quarantine.jsonl"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    from datetime import datetime, timezone
+
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "prompt_version": PROMPT_VERSION,
@@ -203,3 +168,149 @@ def _log_quarantine(title: str,raw: str,first_error: str,repair_raw: str,second_
 
 
     print(f"[QUARANTINE] logged to {log_path.name}: {title!r}")
+
+
+def _log_call(
+    prompt_version: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    duration_ms: int,
+    repaired: bool,
+    outcome: str,
+) -> None:
+    """Append a structured call record to logs/calls.jsonl.
+
+    Called after every completed model call cycle (successful or failed).
+    JSON Lines format — one complete JSON object per line.
+
+    outcome: "success" | "quarantined" | "timeout" | "kill_switch" | "stub"
+    """
+    log_path = Path(__file__).parent / "logs" / "calls.jsonl"
+    log_path.parent.mkdir(exist_ok=True)
+
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "prompt_version": prompt_version,
+        "model": model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "duration_ms": duration_ms,
+        "repaired": repaired,
+        "outcome": outcome,
+    }
+
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+
+def categorize(title: str) -> CategorizeResponse:
+    """... existing docstring ..."""
+
+    # Kill switch
+    if os.environ.get("LLM_ENABLED", "true").lower() == "false":
+        _log_call(
+            prompt_version=PROMPT_VERSION,
+            model="(none)",
+            input_tokens=0,
+            output_tokens=0,
+            duration_ms=0,
+            repaired=False,
+            outcome="kill_switch",
+        )
+        return CategorizeResponse(
+            category=Category.other,
+            priority=Priority.normal,
+            estimated_minutes=30,
+            confidence=0.0,
+            reason="categorization service disabled",
+        )
+
+    # Stub mode
+    if os.environ.get("LLM_STUB") == "1":
+        _log_call(
+            prompt_version=PROMPT_VERSION,
+            model="(stub)",
+            input_tokens=0,
+            output_tokens=0,
+            duration_ms=0,
+            repaired=False,
+            outcome="stub",
+        )
+        return _stub_response(title)
+
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": title},
+    ]
+
+    raw , meta = _call_model(messages)
+
+    first_error = None
+    try:
+        json_text = _extract_json(raw)
+        parsed = json.loads(json_text)
+        result = CategorizeResponse(**parsed)
+        _log_call(
+            prompt_version=PROMPT_VERSION,
+            model=meta["model"],
+            input_tokens=meta["input_tokens"],
+            output_tokens=meta["output_tokens"],
+            duration_ms=meta["duration_ms"],
+            repaired=False,
+            outcome="success",
+        )
+        return result
+    except (LLMExtractionError, json.JSONDecodeError, ValidationError) as e:
+        first_error = e
+
+    # Repair retry
+    repair_messages = messages + [
+        {"role": "assistant", "content": raw},
+        {
+            "role": "user",
+            "content": (
+                f"Your previous response was rejected for this reason:\n"
+                f"{first_error}\n\n"
+                f"Return ONLY corrected JSON matching the schema. "
+                f"No explanation, no code fences."
+            ),
+        },
+    ]
+
+    repair_raw , repair_meta = _call_model(repair_messages)
+
+    try:
+        repair_json = _extract_json(repair_raw)
+        repair_parsed = json.loads(repair_json)
+        result = CategorizeResponse(**repair_parsed)
+        _log_call(
+            prompt_version=PROMPT_VERSION,
+            model=repair_meta["model"],
+            input_tokens=meta["input_tokens"] + repair_meta["input_tokens"],
+            output_tokens=meta["output_tokens"] + repair_meta["output_tokens"],
+            duration_ms=meta["duration_ms"] + repair_meta["duration_ms"],
+            repaired=True,
+            outcome="success",
+        )
+        return result
+    except (LLMExtractionError, json.JSONDecodeError, ValidationError) as e:
+        second_error = e
+        _log_call(
+            prompt_version=PROMPT_VERSION,
+            model=repair_meta["model"],
+            input_tokens=meta["input_tokens"] + repair_meta["input_tokens"],
+            output_tokens=meta["output_tokens"] + repair_meta["output_tokens"],
+            duration_ms=meta["duration_ms"] + repair_meta["duration_ms"],
+            repaired=True,
+            outcome="quarantined",
+        )
+        _log_quarantine(title, raw, str(first_error), repair_raw, str(second_error))
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Model output failed validation twice. "
+                "Original error: " + str(first_error)[:200]
+            ),
+        )
