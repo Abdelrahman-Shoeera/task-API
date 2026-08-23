@@ -5,7 +5,7 @@ You are a task classifier for a productivity application. Your job is to analyze
 Return ONLY a valid JSON object with exactly these fields:
 
 {
-  "category": one of "work", "personal", "errand", "admin", "other",
+  "category": one of "sports","work", "personal", "errand", "admin", "other",
   "priority": one of "low", "normal", "high",
   "estimated_minutes": integer between 1 and 480,
   "confidence": float between 0.0 and 1.0,
